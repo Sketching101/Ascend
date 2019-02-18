@@ -4,27 +4,31 @@ using UnityEngine;
 using UnityEngine.UI;
 
 public class PlayerController : MonoBehaviour, ISavable {
-
-    [HideInInspector] public bool facingRight = true;
-    [HideInInspector] public bool jump = false;
-    [HideInInspector] public bool holdingBox = false;
-
-    public float moveForce = 365f;
-    public float maxSpeed = 5f;
-    public float jumpForce = 1000f;
+    // movement 
+    public float moveForce;
+    public float maxSpeed;
+    public float jumpForce;
     public Transform groundCheck;
-    public bool grounded = false;
     public Animator anim;
-    
+
+    private bool grounded = false;
+    private bool facingRight = true;
+    private bool jump = false;
+
+    // intactables
+    private bool holdingBox = false;
+    private bool overBarrel = false;
+    private int overInteractables = 0;
+
     //player death
     private bool dying = false;
-    public float deathTime = 2.0f;
+    public float deathTime;
     public Image fader;
     private float deathTimer;
     public SceneSaver sceneSaver;
 
     //ladder
-    public bool onLadder;
+    private bool onLadder;
     public float climbSpeed;
     private float climbVelocity;
     private float gravityStore;
@@ -62,31 +66,55 @@ public class PlayerController : MonoBehaviour, ISavable {
     void OnTriggerEnter2D(Collider2D Other)
     {
         if(dying) return;
-        if(Other.gameObject.CompareTag("Interactable"))
+
+        if(Other.CompareTag("Oil Barrel")) {
+            overBarrel = true;
+        }
+        else if(Other.CompareTag("Interactable"))
         {
-            Debug.Log("Player Trigger Enter: "+Other.name);
+            //Debug.Log("Player Trigger Enter: "+Other.name);
             Other.GetComponent<Interactable>().inTrigger = true;
+            overInteractables++;
+        }
+        else if(Other.CompareTag("Ladder")) {
+            onLadder = true;
+            //set g = 0
+            rb2d.gravityScale = 0f;
         }
     }
 
     void OnTriggerExit2D(Collider2D Other)
     {
         if(dying) return;
-        if(Other.gameObject.CompareTag("Interactable") && !Other.transform.IsChildOf(transform))
+
+        if(Other.CompareTag("Oil Barrel")) {
+            overBarrel = false;
+        }
+        else if(Other.CompareTag("Interactable") && !Other.transform.IsChildOf(transform))
         {
-            Debug.Log("Player Trigger Exit: "+Other.name);
+            //Debug.Log("Player Trigger Exit: "+Other.name);
             Other.GetComponent<Interactable>().inTrigger = false;
+            overInteractables--;
+        }
+        else if(Other.CompareTag("Ladder")) {
+            onLadder = false;
+            //set g back to original value
+            rb2d.gravityScale = gravityStore;
         }
     }
 
     void OnTriggerStay2D(Collider2D Other)
     {
         if(dying) return;
-        if(Other.gameObject.CompareTag("Enemy") && Input.GetKeyDown(KeyCode.E))
+        if(Other.CompareTag("Enemy") && Input.GetKeyDown(KeyCode.E))
         {
             Debug.Log("STUN!");
-            Other.GetComponent<EnemyController>().stun();
+            Other.GetComponent<EnemyController>().SetStunned(true);
         }
+    }
+
+    void OnCollisionEnter2D(Collision2D coll) {
+        //Debug.Log("Collided with " + coll.gameObject.ToString());
     }
 
     void FixedUpdate()
@@ -115,37 +143,27 @@ public class PlayerController : MonoBehaviour, ISavable {
         else if (hMove < 0 && facingRight)
             Flip();
 
-        if (jump)
-        {
-            anim.Play("jump");
-            rb2d.AddForce(new Vector2(0f, jumpForce));
-            jump = false;
-        } else if (!grounded)
-        {
-            anim.Play("jump");
-        }
-        else if (facingRight)
-        {
-            anim.Play("right");
-        } else if (!facingRight)
-        {
-            anim.Play("left");
-        }
-         
-        if (onLadder) {
-            //set g = 0
-            rb2d.gravityScale = 0f;
+        if(onLadder) {
             climbVelocity = climbSpeed*Input.GetAxisRaw("Vertical");
             rb2d.velocity = new Vector2(rb2d.velocity.x, climbVelocity);
 
             anim.Play("climb");
         }
-
-        if (!onLadder) {
-            //set g back to original value
-            rb2d.gravityScale = gravityStore;
+        else if (jump)
+        {
+            anim.Play("jump");
+            rb2d.AddForce(new Vector2(0f, jumpForce));
+            jump = false;
         }
-
+        else if (!grounded){
+            anim.Play("jump");
+        }
+        else if (facingRight){
+            anim.Play("right");
+        }
+        else if (!facingRight){
+            anim.Play("left");
+        }
     }
 
     void Flip()
@@ -162,6 +180,22 @@ public class PlayerController : MonoBehaviour, ISavable {
         deathTimer = deathTime;
     }
 
+    public void SetHoldingBox(bool holdingBox) {
+        this.holdingBox = holdingBox;
+    }
+
+    public bool GetOverBarrel() {
+        return overBarrel;
+    }
+
+    public int GetOverInteractables() {
+        return overInteractables;
+    }
+
+    public bool GetFacingRight() {
+        return facingRight;
+    }
+
     public void OnSave(ISavableWriteStore store)
     {
         store.WriteVector3("pos", rb2d.position);
@@ -172,6 +206,8 @@ public class PlayerController : MonoBehaviour, ISavable {
         facingRight = true;
         jump = false;
         holdingBox = false;
+        overBarrel = false;
+        // overInteractables
 
         dying = false;
         onLadder = false;
