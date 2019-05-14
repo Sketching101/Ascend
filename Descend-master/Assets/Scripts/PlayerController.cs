@@ -7,6 +7,7 @@ public class PlayerController : MonoBehaviour, ISavable {
     // movement 
     public float moveForce;
     public float maxSpeed;
+    public float carefulWalkSpeedFactor;
     public float jumpForce;
     public Transform groundCheck;
     public Animator anim;
@@ -14,14 +15,16 @@ public class PlayerController : MonoBehaviour, ISavable {
     private bool grounded = false;
     private bool facingRight = true;
     private bool jump = false;
+    private bool carefulWalking = false;
 
     // intactables
     private bool holdingBox = false;
     private bool overBarrel = false;
     private int overInteractables = 0;
 
-    //player death
-    private bool dying = false;
+    //player death 
+    //instaDeath is caused by the light; there's no fade-out animation
+    private bool dying = false, instaDeath = false;
     public float deathTime;
     public Image fader;
     private float deathTimer;
@@ -30,7 +33,6 @@ public class PlayerController : MonoBehaviour, ISavable {
     //ladder
     private bool onLadder;
     public float climbSpeed;
-    private float climbVelocity;
     private float gravityStore;
 
     private Rigidbody2D rb2d;
@@ -43,7 +45,7 @@ public class PlayerController : MonoBehaviour, ISavable {
 	
 	// Update is called once per frame
 	void Update () {
-        if(dying)
+        if(dying && !instaDeath)
         {
             deathTimer -= Time.deltaTime;
             fader.color = new Color(0, 0, 0, 1-deathTimer/deathTime);
@@ -53,6 +55,10 @@ public class PlayerController : MonoBehaviour, ISavable {
                 fader.color = new Color(0, 0, 0, 0);
             }
             return;
+        } else if (dying && instaDeath)
+        { // No fade-out animations for deaths involving the lamp
+            sceneSaver.Load();
+            return;
         }
 
         grounded = Physics2D.Linecast(transform.position, groundCheck.position, 1 << LayerMask.NameToLayer("Ground"));
@@ -60,6 +66,13 @@ public class PlayerController : MonoBehaviour, ISavable {
         if (Input.GetButtonDown("Jump") && grounded && !holdingBox)
         {
             jump = true;
+            carefulWalking = false;
+        } else if (Input.GetKey(KeyCode.LeftShift) && grounded && !holdingBox)
+        { // As of now, player cannot hold box and careful walk
+            carefulWalking = true;
+        } else if (carefulWalking)
+        {
+            carefulWalking = false;
         }
     }
 
@@ -103,16 +116,6 @@ public class PlayerController : MonoBehaviour, ISavable {
         }
     }
 
-    void OnTriggerStay2D(Collider2D Other)
-    {
-        if(dying) return;
-        if(Other.CompareTag("Enemy") && Input.GetKeyDown(KeyCode.E))
-        {
-            Debug.Log("STUN!");
-            Other.GetComponent<EnemyController>().SetStunned(true);
-        }
-    }
-
     void OnCollisionEnter2D(Collision2D coll) {
         //Debug.Log("Collided with " + coll.gameObject.ToString());
     }
@@ -132,6 +135,9 @@ public class PlayerController : MonoBehaviour, ISavable {
         if(holdingBox)
             curMaxSpeed /= 2.0f;
 
+        if (carefulWalking)
+            curMaxSpeed *= carefulWalkSpeedFactor;
+
         if (hMove * rb2d.velocity.x < curMaxSpeed)
             rb2d.AddForce(Vector2.right * hMove * moveForce);
 
@@ -144,7 +150,7 @@ public class PlayerController : MonoBehaviour, ISavable {
             Flip();
 
         if(onLadder) {
-            climbVelocity = climbSpeed*Input.GetAxisRaw("Vertical");
+            float climbVelocity = climbSpeed*Input.GetAxisRaw("Vertical");
             rb2d.velocity = new Vector2(rb2d.velocity.x, climbVelocity);
 
             anim.Play("climb");
@@ -174,14 +180,18 @@ public class PlayerController : MonoBehaviour, ISavable {
         //transform.localScale = theScale;
     }
 
-    public void Kill()
+    public void Kill(bool activateInstaDeath=false)
     {
         dying = true;
         deathTimer = deathTime;
+        instaDeath = activateInstaDeath;
     }
 
     public void SetHoldingBox(bool holdingBox) {
         this.holdingBox = holdingBox;
+
+        if (holdingBox && carefulWalking)
+            carefulWalking = false;
     }
 
     public bool GetOverBarrel() {
@@ -201,16 +211,23 @@ public class PlayerController : MonoBehaviour, ISavable {
         store.WriteVector3("pos", rb2d.position);
     }
 
+    public bool GetCarefulWalking()
+    {
+        return carefulWalking;
+    }
+
     public void OnLoad(ISavableReadStore store)
     {
         facingRight = true;
         jump = false;
         holdingBox = false;
         overBarrel = false;
-        // overInteractables
+        overInteractables = 0;
 
         dying = false;
+        instaDeath = false;
         onLadder = false;
+        carefulWalking = false;
 
         rb2d.position = store.ReadVector3("pos");
         rb2d.velocity = Vector2.zero;
